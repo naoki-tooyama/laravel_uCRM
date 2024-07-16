@@ -7,6 +7,8 @@ use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use App\Models\Order;
 use Illuminate\Support\Facades\DB;
+use App\Services\AnalysisService;
+use App\Services\DecileService;
 
 class AnalysisController extends Controller
 {
@@ -17,20 +19,24 @@ class AnalysisController extends Controller
         if($request->type === 'perDay')
         {
             //日別
-            $subQuery->where('status', true)
-                ->groupBy('id')
-                ->selectRaw('SUM(subtotal) as totalPerPurchase,
-                DATE_FORMAT(created_at, "%Y%m%d") as date');
-
-            $data = DB::table($subQuery)
-                ->groupBy('date')
-                ->selectRaw('date, SUM(totalPerPurchase) as total')
-                ->get();
+            list($data, $labels, $totals) =  AnalysisService::perDay($subQuery);
+        }
+        if($request->type === 'perMonth')
+        {
+            //日別
+            list($data, $labels, $totals) =  AnalysisService::perMonth($subQuery);
+        }
+        if($request->type === 'perYear')
+        {
+            //日別
+            list($data, $labels, $totals) =  AnalysisService::perYear($subQuery);
+        }
+        if($request->type === 'decile')
+        {
+            //日別
+            list($data, $labels, $totals) =  DecileService::decile($subQuery);
         }
 
-        $labels = $data->pluck('date');
-        $totals = $data->pluck('total');
-        
         return response()->json([
             'data' => $data,
             'type' => $request->type,
