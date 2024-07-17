@@ -11,8 +11,8 @@ class AnalysisController extends Controller
 {
     public function index(){
         //期間指定
-        $startDate = '2022-08-01';
-        $endDate   = '2022-08-31';
+        $startDate = '2023-09-01';
+        $endDate   = '2024-07-31';
 
         // $period =Order::betweenDate($startDate, $endDate)
         // ->groupBy('id')
@@ -32,6 +32,122 @@ class AnalysisController extends Controller
         // ->groupBy('date')
         // ->selectRaw('date, SUM(totalPerPurchase) as total')
         // ->get();
+        // dd($data);
+
+        //期間指定
+        $startDate = '2024-07-31';
+        $endDate   = '2024-07-31';
+
+        //RFM分析
+        //1.購買ID毎にまとめる
+        $subQuery = Order::betweenDate($startDate, $endDate)
+        ->groupBy('id')
+        ->selectRaw('id, customer_id, customer_name, 
+        SUM(subtotal) as totalPerPurchase, created_at');
+
+        //2.会員ごとにまとめて最終購入日、回数、合計金額を取得
+        $subQuery = DB::table($subQuery)
+        ->groupBy('customer_id')
+        ->selectRaw('
+        customer_id,
+        customer_name, 
+        MAX(created_at ) as recentDate,
+        DATEDIFF(now(), MAX(created_at)) as recency,
+        COUNT(customer_id ) as frequency,
+        SUM(totalPerPurchase) as monetary');
+
+        $rfmPrms = [
+            14, 28, 60, 90,
+            7, 5, 3, 2,
+            300000, 200000, 100000, 30000];
+
+        //4.会員毎にRFMランクを分類
+        $subQuery = DB::table($subQuery)
+        ->selectRaw('
+        customer_id,
+        customer_name,
+        recentDate,
+        recency,
+        frequency,
+        monetary,
+        case
+            when recency < ? then 5
+            when recency < ? then 4
+            when recency < ? then 3
+            when recency < ? then 2
+            else                  1
+        end as r,
+        case
+            when ? <= frequency then 5
+            when ? <= frequency then 4
+            when ? <= frequency then 3
+            when ? <= frequency then 2
+            else                     1
+        end as f,
+        case
+            when ? <= monetary then 5
+            when ? <= monetary then 4
+            when ? <= monetary then 3
+            when ? <= monetary then 2
+            else                    1
+        end as m
+        ', $rfmPrms);
+        // dd($subQuery->get());
+
+        //5.ランクごとに数を計算する
+        $total = DB::table($subQuery)->count();
+
+        $rCount = DB::table($subQuery)
+        ->rightJoin('ranks', 'ranks.rank', '=','r')
+        ->groupBy('rank')
+        ->selectRaw('rank as r, COUNT(r)')
+        ->orderBy('r', 'desc')
+        ->pluck('COUNT(r)');
+        // dd($rCount);
+
+        $fCount = DB::table($subQuery)
+        ->rightJoin('ranks', 'ranks.rank', '=','f')
+        ->groupBy('rank')
+        ->selectRaw('rank as f, COUNT(f)')
+        ->orderBy('f', 'desc')
+        ->pluck('COUNT(f)');
+
+        $mCount = DB::table($subQuery)
+        ->rightJoin('ranks', 'ranks.rank', '=','m')
+        ->groupBy('rank')
+        ->selectRaw('rank as m, COUNT(m)')
+        ->orderBy('m', 'desc')
+        ->pluck('COUNT(m)');
+        // dd($rCount, $fCount, $mCount);
+
+        $eachCount =[];//Vue側に渡す空の配列
+        $rank =5; //初期値５
+
+        for($i =0; $i <5 ; $i++){
+            array_push($eachCount, [
+                'rank' => $rank,
+                 'r' => $rCount[$i],
+                 'f' => $fCount[$i],
+                 'm' => $mCount[$i],
+            ]);
+            $rank--;//rankを１ずつ減らす
+        }
+        // dd($total, $eachCount, $rCount, $fCount, $mCount);
+
+        //6.RとFで2次元で表示
+        $data = DB::table($subQuery)
+        ->rightJoin('ranks', 'ranks.rank', '=','r')
+        ->groupBy('rank')
+        ->selectRaw('
+        CONCAT("r_", rank) as rRank,
+        COUNT(case when f=5 then 1 end ) as f_5,
+        COUNT(case when f=4 then 1 end ) as f_4,
+        COUNT(case when f=3 then 1 end ) as f_3,
+        COUNT(case when f=2 then 1 end ) as f_2,
+        COUNT(case when f=1 then 1 end ) as f_1
+        ')
+        ->orderBy('rRank', 'desc')
+        ->get();
         // dd($data);
 
         return Inertia::render('Analysis');
@@ -127,5 +243,120 @@ class AnalysisController extends Controller
         round(100 *totalPerGroup / @total, 1) as totalRatio')
         ->get();
         // dd($data);
+    }
+
+    public function rfm(){
+        
+        //期間指定
+        $startDate = '2023-09-01';
+        $endDate   = '2024-07-31';
+
+        //RFM分析
+        //1.購買ID毎にまとめる
+        $subQuery = Order::betweenDate($startDate, $endDate)
+        ->groupBy('id')
+        ->selectRaw('id, customer_id, customer_name, 
+        SUM(subtotal) as totalPerPurchase, created_at');
+
+        //2.会員ごとにまとめて最終購入日、回数、合計金額を取得
+        $subQuery = DB::table($subQuery)
+        ->groupBy('customer_id')
+        ->selectRaw('
+        customer_id,
+        customer_name, 
+        MAX(created_at ) as recentDate,
+        DATEDIFF(now(), MAX(created_at)) as recency,
+        COUNT(customer_id ) as frequency,
+        SUM(totalPerPurchase) as monetary');
+
+        $rfmPrms = [
+            14, 28, 60, 90,
+            7, 5, 3, 2,
+            300000, 200000, 100000, 30000];
+
+        //4.会員毎にRFMランクを分類
+        $subQuery = DB::table($subQuery)
+        ->selectRaw('
+        customer_id,
+        customer_name,
+        recentDate,
+        recency,
+        frequency,
+        monetary,
+        case
+            when recency < ? then 5
+            when recency < ? then 4
+            when recency < ? then 3
+            when recency < ? then 2
+            else                  1
+        end as r,
+        case
+            when ? <= frequency then 5
+            when ? <= frequency then 4
+            when ? <= frequency then 3
+            when ? <= frequency then 2
+            else                     1
+        end as f,
+        case
+            when ? <= monetary then 5
+            when ? <= monetary then 4
+            when ? <= monetary then 3
+            when ? <= monetary then 2
+            else                    1
+        end as m
+        ', $rfmPrms);
+        // dd($subQuery);
+
+        //5.ランクごとに数を計算する
+        $total = DB::table($subQuery)->count();
+
+        $rCount = DB::table($subQuery)
+        ->groupBy('r')
+        ->selectRaw('r, COUNT(r)')
+        ->orderBy('r', 'desc')
+        ->pluck('COUNT(r)');
+
+        $fCount = DB::table($subQuery)
+        ->groupBy('f')
+        ->selectRaw('f, COUNT(f)')
+        ->orderBy('f', 'desc')
+        ->pluck('COUNT(f)');
+
+        $mCount = DB::table($subQuery)
+        ->groupBy('m')
+        ->selectRaw('m, COUNT(m)')
+        ->orderBy('m', 'desc')
+        ->pluck('COUNT(m)');
+        // dd($rCount, $fCount, $mCount);
+
+        $eachCount =[];//Vue側に渡す空の配列
+        $rank =5; //初期値５
+
+        for($i =0; $i <5 ; $i++){
+            array_push($eachCount, [
+                'rank' => $rank,
+                 'r' => $rCount[$i],
+                 'f' => $fCount[$i],
+                 'm' => $mCount[$i],
+            ]);
+            $rank--;//rankを１ずつ減らす
+        }
+        // dd($total, $eachCount, $rCount, $fCount, $mCount);
+
+        //6.RとFで2次元で表示
+        $data = DB::table($subQuery)
+        ->groupBy('r')
+        ->selectRaw('
+        CONCAT("r_", r) as rRank,
+        COUNT(case when f=5 then 1 end ) as f_5,
+        COUNT(case when f=4 then 1 end ) as f_4,
+        COUNT(case when f=3 then 1 end ) as f_3,
+        COUNT(case when f=2 then 1 end ) as f_2,
+        COUNT(case when f=1 then 1 end ) as f_1
+        ')
+        ->orderBy('rRank', 'desc')
+        ->get();
+        // dd($data);
+        
     }
 }
